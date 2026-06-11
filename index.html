@@ -65,6 +65,12 @@
     color:var(--cinza);font-variant-numeric:tabular-nums;
   }
   .qtd.tem{color:var(--verde)}
+  @keyframes pulso{
+    0%{transform:scale(1)}
+    35%{transform:scale(1.45);color:#1f6b3a}
+    100%{transform:scale(1)}
+  }
+  .qtd.pulsar{animation:pulso .22s ease-out}
   button.btn{
     border:none;border-radius:11px;font-weight:800;color:#fff;
     display:flex;align-items:center;justify-content:center;user-select:none;
@@ -215,6 +221,7 @@
     <p>Comece uma semana nova só depois de enviar a contagem atual.</p>
     <button class="acao reset" id="btnNovaSemana">Começar semana nova (zerar tudo)</button>
     <button class="acao copiar" id="btnEditarProdutos">Editar produtos</button>
+    <button class="acao fechar-sheet" id="btnVibrar">Confirmação de toque: ligada</button>
     <button class="acao fechar-sheet" id="btnFecharMenu">Voltar</button>
   </div>
 </div>
@@ -276,6 +283,7 @@ const DEFAULT_PRODUTOS = [
 ];
 const CHAVE = "contagem_remessa_v1";
 const CHAVE_CAT = "contagem_catalogo_v1";
+const CHAVE_VIBRAR = "contagem_vibrar_v1";
 
 // ---- catálogo (editável) ----
 let PRODUTOS = carregarCatalogo();
@@ -371,7 +379,24 @@ function pintarLinha(i){
   r.menosEl.disabled = v<=0;
 }
 
-function inc(i){ qtds[i]++; salvar(); pintarLinha(i); atualizarTotal(); }
+// ---- confirmação de toque: vibração (Android) + flash visual (todos) ----
+let confirmarOn = carregarConfirmar();
+function carregarConfirmar(){
+  try{ const v = localStorage.getItem(CHAVE_VIBRAR); return v === null ? true : v === "1"; }catch(e){ return true; }
+}
+function salvarConfirmar(){ try{ localStorage.setItem(CHAVE_VIBRAR, confirmarOn ? "1":"0"); }catch(e){} }
+function feedbackToque(i){
+  if(!confirmarOn) return;
+  if("vibrate" in navigator){ try{ navigator.vibrate(18); }catch(e){} }   // Android
+  const r = refs[i];                                                       // flash visual (iOS + Android)
+  if(r && r.qtdEl){
+    r.qtdEl.classList.remove("pulsar");
+    void r.qtdEl.offsetWidth;        // reinicia a animação mesmo em toques seguidos
+    r.qtdEl.classList.add("pulsar");
+  }
+}
+
+function inc(i){ qtds[i]++; salvar(); pintarLinha(i); atualizarTotal(); feedbackToque(i); }
 function dec(i){ if(qtds[i]>0){ qtds[i]--; salvar(); pintarLinha(i); atualizarTotal(); } }
 
 function atualizarTotal(){
@@ -429,6 +454,17 @@ function fecharSheet(){ sheet.classList.remove("on"); sheetBg.classList.remove("
 sheetBg.addEventListener("click",fecharSheet);
 document.getElementById("btnFecharMenu").addEventListener("click",fecharSheet);
 document.getElementById("btnMenu").addEventListener("click",abrirMenu);
+
+// ---- toggle de confirmação de toque ----
+const btnVibrar=document.getElementById("btnVibrar");
+function atualizarBtnVibrar(){ btnVibrar.textContent = "Confirmação de toque: " + (confirmarOn ? "ligada":"desligada"); }
+atualizarBtnVibrar();
+btnVibrar.addEventListener("click",()=>{
+  confirmarOn = !confirmarOn;
+  salvarConfirmar();
+  atualizarBtnVibrar();
+  toast(confirmarOn ? "Confirmação de toque ligada" : "Confirmação de toque desligada");
+});
 
 // ---- tela cheia de resumo ----
 const resumoFull=document.getElementById("resumoFull");

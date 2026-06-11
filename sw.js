@@ -1,4 +1,4 @@
-const CACHE = "contagem-v4";
+const CACHE = "contagem-v6";
 const ASSETS = [
   "./",
   "./index.html",
