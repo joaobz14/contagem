@@ -141,6 +141,19 @@
   .full-foot .acao{width:100%;margin-bottom:9px;padding:16px 8px;font-size:16px}
   .full-foot .acao:last-child{margin-bottom:0}
 
+  /* ---- editor de produtos ---- */
+  .edit-item{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--linha);
+    border-radius:12px;padding:11px 11px 11px 15px;margin-bottom:8px}
+  .edit-item .enome{flex:1 1 auto;font-size:15.5px;font-weight:600;line-height:1.25;min-width:0;
+    word-break:break-word}
+  .edit-btn{flex:0 0 auto;border:none;border-radius:10px;width:46px;height:44px;font-size:18px;
+    display:flex;align-items:center;justify-content:center;font-weight:700}
+  .edit-ren{background:#e7eef7;color:var(--azul)}
+  .edit-ren:active{background:#d4e0ee}
+  .edit-rem{background:#fbeaec;color:var(--vermelho)}
+  .edit-rem:active{background:#f3d6da}
+  .edit-dica{font-size:13px;color:var(--cinza);margin:2px 2px 12px;line-height:1.4}
+
   /* ---- toast ---- */
   .toast{
     position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);
@@ -188,7 +201,21 @@
     <h2>Opções</h2>
     <p>Comece uma semana nova só depois de enviar a contagem atual.</p>
     <button class="acao reset" id="btnNovaSemana">Começar semana nova (zerar tudo)</button>
+    <button class="acao copiar" id="btnEditarProdutos">Editar produtos</button>
     <button class="acao fechar-sheet" id="btnFecharMenu">Voltar</button>
+  </div>
+</div>
+
+<!-- tela cheia de edição de produtos -->
+<div class="full" id="editFull">
+  <div class="full-head">
+    <button class="full-voltar" id="editFechar" aria-label="Voltar">‹</button>
+    <div class="full-titulo">Editar produtos</div>
+  </div>
+  <div class="full-body" id="editBody"></div>
+  <div class="full-foot">
+    <button class="acao enviar" id="btnAddProduto">+ Adicionar produto</button>
+    <button class="acao copiar" id="btnExportCat">Exportar catálogo (p/ o leitor)</button>
   </div>
 </div>
 
@@ -213,7 +240,7 @@
 
 <script>
 "use strict";
-const PRODUTOS = [
+const DEFAULT_PRODUTOS = [
 "LIQUIDIFICADOR AR 2L 110 M1","LIQUIDIFICADOR AR 2L 220 M1","LIQUIDIFICADOR AR 4L 110 M1",
 "LIQUIDIFICADOR AR 4L 220 M1","LIQUIDIFICADOR BR 2L 110 M1","LIQUIDIFICADOR BR 2L 220 M1",
 "LIQUIDIFICADOR BR 4L 110 M1","LIQUIDIFICADOR BR 4L 220 M1","LIQUIDIFICADOR BR 6L 110 M1",
@@ -230,16 +257,34 @@ const PRODUTOS = [
 "COPO 2L BR M1","COPO 4L BR M1","POWER","PP"
 ];
 const CHAVE = "contagem_remessa_v1";
+const CHAVE_CAT = "contagem_catalogo_v1";
+
+// ---- catálogo (editável) ----
+let PRODUTOS = carregarCatalogo();
+function carregarCatalogo(){
+  try{
+    const raw = localStorage.getItem(CHAVE_CAT);
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr) && arr.length>0) return arr.map(s=>String(s));
+    }
+  }catch(e){}
+  return DEFAULT_PRODUTOS.slice();
+}
+function salvarCatalogo(){
+  try{ localStorage.setItem(CHAVE_CAT, JSON.stringify(PRODUTOS)); }catch(e){}
+}
 
 // ---- estado ----
 let qtds = carregar();
+alinhar();
 
 function carregar(){
   try{
     const raw = localStorage.getItem(CHAVE);
     if(raw){
       const arr = JSON.parse(raw);
-      if(Array.isArray(arr) && arr.length === PRODUTOS.length) return arr.map(n=>parseInt(n)||0);
+      if(Array.isArray(arr)) return arr.map(n=>parseInt(n)||0);
     }
   }catch(e){}
   return new Array(PRODUTOS.length).fill(0);
@@ -247,12 +292,17 @@ function carregar(){
 function salvar(){
   try{ localStorage.setItem(CHAVE, JSON.stringify(qtds)); }catch(e){}
 }
+// mantém qtds do mesmo tamanho do catálogo
+function alinhar(){
+  while(qtds.length < PRODUTOS.length) qtds.push(0);
+  if(qtds.length > PRODUTOS.length) qtds.length = PRODUTOS.length;
+}
 
 // ---- normalização p/ busca ----
 function norm(s){
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
 }
-const NOMES_NORM = PRODUTOS.map(norm);
+let NOMES_NORM = PRODUTOS.map(norm);
 
 // ---- render ----
 const lista = document.getElementById("lista");
@@ -424,6 +474,76 @@ document.getElementById("btnNovaSemana").addEventListener("click",()=>{
     toast("Pronto — contagem zerada");
   }
 });
+
+// ---- editor de produtos ----
+const editFull=document.getElementById("editFull");
+function rebuildNorm(){ NOMES_NORM = PRODUTOS.map(norm); }
+function aplicarMudancaCatalogo(){
+  salvarCatalogo(); salvar(); rebuildNorm();
+  montar();                 // reconstrói a lista de contagem
+  if(busca.value) filtrar();
+  renderEditor();           // atualiza a própria tela de edição
+}
+function renderEditor(){
+  const body=document.getElementById("editBody");
+  body.innerHTML="";
+  const dica=document.createElement("div");
+  dica.className="edit-dica";
+  dica.textContent="Produtos novos entram no fim da lista. Depois de mudar, toque em \"Exportar catálogo\" e atualize o leitor no PC.";
+  body.append(dica);
+  PRODUTOS.forEach((nome,i)=>{
+    const row=document.createElement("div"); row.className="edit-item";
+    const nm=document.createElement("div"); nm.className="enome"; nm.textContent=nome;
+    const ren=document.createElement("button"); ren.className="edit-btn edit-ren"; ren.textContent="✎";
+    ren.setAttribute("aria-label","Renomear "+nome);
+    ren.addEventListener("click",()=>renomear(i));
+    const rem=document.createElement("button"); rem.className="edit-btn edit-rem"; rem.textContent="🗑";
+    rem.setAttribute("aria-label","Remover "+nome);
+    rem.addEventListener("click",()=>remover(i));
+    row.append(nm,ren,rem);
+    body.append(row);
+  });
+}
+function nomeRepetido(nome,ignoreIdx){
+  const n=norm(nome);
+  return PRODUTOS.some((p,idx)=> idx!==ignoreIdx && norm(p)===n);
+}
+function adicionar(){
+  const nome=(prompt("Nome do novo produto:")||"").trim();
+  if(!nome) return;
+  if(nomeRepetido(nome,-1)){ alert("Já existe um produto com esse nome."); return; }
+  PRODUTOS.push(nome); qtds.push(0);
+  aplicarMudancaCatalogo();
+  toast("Produto adicionado");
+}
+function renomear(i){
+  const novo=(prompt("Renomear produto:",PRODUTOS[i])||"").trim();
+  if(!novo || novo===PRODUTOS[i]) return;
+  if(nomeRepetido(novo,i)){ alert("Já existe um produto com esse nome."); return; }
+  PRODUTOS[i]=novo;
+  aplicarMudancaCatalogo();
+  toast("Nome alterado");
+}
+function remover(i){
+  const temContagem = qtds[i]>0;
+  const aviso = temContagem
+    ? "Este produto tem "+qtds[i]+" na contagem atual. Remover mesmo assim?"
+    : "Remover \""+PRODUTOS[i]+"\" do catálogo?";
+  if(!confirm(aviso)) return;
+  PRODUTOS.splice(i,1); qtds.splice(i,1);
+  aplicarMudancaCatalogo();
+  toast("Produto removido");
+}
+function abrirEditor(){ renderEditor(); fecharSheet(); editFull.classList.add("on"); }
+function fecharEditor(){ editFull.classList.remove("on"); }
+document.getElementById("btnEditarProdutos").addEventListener("click",abrirEditor);
+document.getElementById("editFechar").addEventListener("click",fecharEditor);
+document.getElementById("btnAddProduto").addEventListener("click",adicionar);
+document.getElementById("btnExportCat").addEventListener("click",()=>{
+  // catálogo completo, um nome por linha, na ordem atual — p/ colar no produtos.txt do leitor
+  copiar(PRODUTOS.join("\n"), "Catálogo copiado — cole no produtos.txt do leitor");
+});
+
 
 // ---- utilidades ----
 function copiar(texto,msg){
