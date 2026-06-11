@@ -161,6 +161,19 @@
     font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;z-index:20;white-space:nowrap;
   }
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---- barra de atualização ---- */
+  .update-bar{
+    position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));
+    background:var(--azul-escuro);color:#fff;border-radius:13px;z-index:40;
+    display:none;align-items:center;gap:10px;padding:12px 12px 12px 16px;
+    box-shadow:0 6px 24px rgba(15,25,40,.35);
+  }
+  .update-bar.on{display:flex}
+  .update-bar .txt{flex:1 1 auto;font-size:14.5px;font-weight:600;line-height:1.3}
+  .update-bar button{flex:0 0 auto;border:none;border-radius:9px;padding:11px 16px;
+    font-size:14px;font-weight:800;background:#2e9e5b;color:#fff}
+  .update-bar button:active{background:#247c48}
 </style>
 </head>
 <body>
@@ -237,6 +250,11 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="update-bar" id="updateBar">
+  <div class="txt">Nova versão disponível</div>
+  <button id="btnAtualizar">Atualizar agora</button>
+</div>
 
 <script>
 "use strict";
@@ -569,10 +587,45 @@ function toast(msg){
 // ---- start ----
 montar();
 
-// ---- service worker (só funciona via http/https; em file:// ignora sem erro) ----
+// ---- service worker + aviso de atualização (só http/https) ----
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  let recarregando = false;
+  // quando o SW novo assume o controle, recarrega uma vez para pegar o conteúdo novo
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (recarregando) return;
+    recarregando = true;
+    window.location.reload();
+  });
+
+  function mostrarBarraUpdate(reg) {
+    const bar = document.getElementById("updateBar");
+    bar.classList.add("on");
+    document.getElementById("btnAtualizar").onclick = () => {
+      bar.classList.remove("on");
+      if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+    };
+  }
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").then((reg) => {
+      // já existe um SW novo esperando?
+      if (reg.waiting && navigator.serviceWorker.controller) mostrarBarraUpdate(reg);
+      // detecta um SW novo chegando
+      reg.addEventListener("updatefound", () => {
+        const novo = reg.installing;
+        if (!novo) return;
+        novo.addEventListener("statechange", () => {
+          if (novo.state === "installed" && navigator.serviceWorker.controller) {
+            mostrarBarraUpdate(reg);
+          }
+        });
+      });
+      // procura atualização ao abrir e ao voltar pro app
+      reg.update();
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") reg.update();
+      });
+    }).catch(() => {});
   });
 }
 
